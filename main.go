@@ -6,12 +6,24 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/context"
 	"golang.org/x/sync/errgroup"
 )
 
 func main() {
-	//	exampleWaitgroup()
-	exampleErrgroup()
+	exampleWaitgroup()
+	//exampleErrgroup()
+	//exampleErrgroupTimeout()
+	//exampleErrgroupCancel()
+}
+
+//
+// Example Waitgroup
+//
+
+func work1(wg *sync.WaitGroup) {
+	time.Sleep(2 * time.Second)
+	wg.Done()
 }
 
 func exampleWaitgroup() {
@@ -19,17 +31,26 @@ func exampleWaitgroup() {
 
 	log.Println("example WaitGroup started")
 
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			time.Sleep(1 * time.Second)
-			wg.Done()
-		}()
-	}
+	wg.Add(2)
+	go work1(&wg)
+	go work1(&wg)
 
 	wg.Wait()
 	log.Println("example WaitGroup finished")
+}
 
+//
+// Example errgroup
+//
+
+func work2a() error {
+	time.Sleep(1 * time.Second)
+	return errors.New("we got an error")
+}
+
+func work2b() error {
+	time.Sleep(2 * time.Second)
+	return nil
 }
 
 func exampleErrgroup() {
@@ -37,17 +58,73 @@ func exampleErrgroup() {
 
 	log.Println("example ErrGroup started")
 
-	for i := 0; i < 4; i++ {
-		eg.Go(func() error {
-			time.Sleep(1 * time.Second)
-			return errors.New("we got an error")
-		})
-	}
+	eg.Go(work2a)
+	eg.Go(work2b)
 
 	err := eg.Wait()
 	if err != nil {
-		log.Fatal("example ErrGroup finished with error: ", err.Error())
+		log.Fatal("finished with error: ", err.Error())
 	}
 
-	log.Println("example ErrGroup finished sucessfully")
+	log.Println("finished sucessfully")
+}
+
+//
+// Example errgroup with context: timeout
+//
+
+func work3(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
+}
+
+func exampleErrgroupTimeout() {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	eg, ctx := errgroup.WithContext(ctx)
+
+	log.Println("example errgroup with timeout")
+
+	eg.Go(func() error {
+		work3(ctx)
+		return ctx.Err()
+	})
+
+	err := eg.Wait()
+	if err != nil {
+		log.Fatal("finished with error: ", err.Error())
+	}
+
+	log.Println("finished sucessfully")
+}
+
+//
+// Example errgroup with context: cancel
+//
+
+func exampleErrgroupCancel() {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	eg, ctx := errgroup.WithContext(ctx)
+
+	log.Println("example errgroup with cancel")
+
+	eg.Go(func() error {
+		work3(ctx)
+		return ctx.Err()
+	})
+	eg.Go(work2a)
+
+	err := eg.Wait()
+	if err != nil {
+		log.Fatal("finished with error: ", err.Error())
+	}
+
+	log.Println("finished sucessfully")
 }
